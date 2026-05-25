@@ -1,37 +1,35 @@
-from flask import Flask, jsonify, render_template, request
+﻿from flask import Flask, jsonify, render_template, request
 
-from reports import build_report
-from solver import LinearProgramError, solve_linear_program
-
+from reports import montar_relatorio
+from solver import ErroProgramaLinear, resolver_programa_linear
 
 app = Flask(__name__)
 
 
 @app.get("/")
-def index():
-    # mostra a tela principal
+def pagina_inicial():
+    # mostra a pagina inicial
     return render_template("index.html")
 
 
 @app.post("/solve")
-def solve():
-    # recebe o modelo enviado pelo javascript
-    data = request.get_json(silent=True)
+def resolver():
+    # recebe os dados do formulario
+    dados = request.get_json(silent=True)
 
-    if not data:
-        return jsonify({"success": False, "error": "Nenhum dado foi enviado."}), 400
+    if not dados:
+        return jsonify({"sucesso": False, "erro": "Nenhum dado foi enviado."}), 400
 
     try:
-        # resolve o problema e monta o relatorio
-        solution = solve_linear_program(data)
-        report = build_report(data, solution)
-    except LinearProgramError as error:
-        return jsonify({"success": False, "error": str(error)}), 400
+        solucao = resolver_programa_linear(dados)
+        relatorio = montar_relatorio(dados, solucao)
+    except ErroProgramaLinear as erro:
+        return jsonify({"sucesso": False, "erro": str(erro)}), 400
 
     return jsonify({
-        "success": True,
-        "solution": solution,
-        "report": report,
+        "sucesso": True,
+        "solucao": solucao,
+        "relatorio": relatorio,
     })
 
 

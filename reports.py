@@ -1,112 +1,47 @@
-def build_report(problem_data: dict, solution: dict) -> dict:
-    # monta um resumo simples para aparecer na tela
-    if solution["optimal_value"] is None:
+﻿def montar_relatorio(dados, solucao):
+    # monta apenas as informacoes importantes
+    if solucao["valor_otimo"] is None:
         return {
-            "summary": "Não foi possível encontrar uma solução ótima.",
-            "model": solution["message"],
-            "non_negativity": _build_non_negative_summary(problem_data),
-            "variables": [],
-            "restrictions": [],
-            "recommendation": {
-                "title": "Revise o modelo",
-                "text": "Confira os coeficientes, os sinais das restrições e os valores do lado direito.",
-                "principle": "A recomendação considera se o solver encontrou uma solução viável e limitada.",
-            },
+            "resumo": "Não foi possível encontrar uma solução ótima.",
+            "nao_negatividade": texto_nao_negatividade(dados),
+            "variaveis": [],
+            "restricoes": [],
         }
 
-    optimization_label = (
-        "maximização"
-        if problem_data.get("optimizationType") == "maximize"
-        else "minimização"
-    )
 
     return {
-        "summary": f"O modelo foi resolvido como um problema de {optimization_label}.",
-        "model": f"O valor ótimo da função objetivo é {solution['optimal_value']}.",
-        "non_negativity": _build_non_negative_summary(problem_data),
-        "variables": [
+        "nao_negatividade": texto_nao_negatividade(dados),
+        "variaveis": solucao["variaveis"],
+        "restricoes": [
             {
-                "name": variable["name"],
-                "value": variable["value"],
-                "text": f"{variable['name']} deve assumir o valor {variable['value']}.",
+                "nome": f"Restrição {folga['numero']}",
+                "ativa": folga["ativa"],
             }
-            for variable in solution["variables"]
+            for folga in solucao["folgas"]
         ],
-        "restrictions": [
-            {
-                "name": f"Restrição {slack['constraint']}",
-                "state": "ativa" if slack["active"] else "com folga",
-                "lhs": slack["lhs"],
-                "rhs": slack["rhs"],
-                "slack": slack["slack"],
-                "text": (
-                    f"Lado esquerdo = {slack['lhs']}, lado direito = {slack['rhs']} "
-                    f"e folga = {slack['slack']}."
-                ),
-            }
-            for slack in solution["slacks"]
-        ],
-        "recommendation": _build_recommendation(solution),
     }
 
 
-def _build_non_negative_summary(problem_data: dict) -> str:
-    # descreve quais variaveis ficaram com a regra x maior ou igual a zero
-    names = problem_data.get("variableNames", [])
-    rules = problem_data.get("nonNegative", [])
+def texto_nao_negatividade(dados):
+    # explica quais variaveis nao podem ser negativas
+    nomes = dados.get("nomes", [])
+    regras = dados.get("nao_negativas", [])
 
-    if not names or len(names) != len(rules):
-        return "A não negatividade foi aplicada como padrão para todas as variáveis."
+    if not nomes or len(nomes) != len(regras):
+        return "Todas as variáveis foram consideradas não negativas."
 
-    applied = [name for name, active in zip(names, rules) if active]
-    free = [name for name, active in zip(names, rules) if not active]
+    nao_negativas = [nome for nome, regra in zip(nomes, regras) if regra]
+    livres = [nome for nome, regra in zip(nomes, regras) if not regra]
 
-    if applied and free:
-        return (
-            f"Não negatividade aplicada em: {', '.join(applied)}. "
-            f"Variáveis livres: {', '.join(free)}."
-        )
+    if nao_negativas and livres:
+        return f"Não negativas: {', '.join(nao_negativas)}. Livres: {', '.join(livres)}."
 
-    if applied:
-        return f"Não negatividade aplicada em todas as variáveis: {', '.join(applied)}."
+    if nao_negativas:
+        return f"Todas as variáveis são não negativas: {', '.join(nao_negativas)}."
 
     return "Nenhuma variável foi limitada pela regra de não negatividade."
 
 
-def _build_recommendation(solution: dict) -> dict:
-    # usa as folgas para identificar o que limita a solucao
-    active_count = sum(1 for slack in solution["slacks"] if slack["active"])
-    if active_count == 1:
-        title = "Atenção à restrição ativa"
-        text = (
-            "O modelo encontrou 1 restrição ativa. Essa restrição é a que limita "
-            "diretamente a melhoria da função objetivo."
-        )
-    else:
-        title = f"Atenção às {active_count} restrições ativas"
-        text = (
-            f"O modelo encontrou {active_count} restrições ativas. Essas restrições são as que "
-            "limitam diretamente a melhoria da função objetivo."
-        )
 
-    if active_count == 0:
-        return {
-            "title": "Há folga nas restrições",
-            "text": (
-                "A solução respeita todas as restrições com folga. Isso sugere que, dentro dos dados "
-                "informados, ainda existe capacidade não utilizada no modelo."
-            ),
-            "principle": (
-                "A recomendação compara o lado esquerdo e o lado direito de cada restrição. "
-                "Quando nenhuma restrição está ativa, nenhuma delas está limitando diretamente o ótimo."
-            ),
-        }
 
-    return {
-        "title": title,
-        "text": text,
-        "principle": (
-            "A recomendação é baseada nas folgas: restrições com folga zero são tratadas como ativas "
-            "e indicam os recursos, limites ou condições que mais pressionam a solução ótima."
-        ),
-    }
+

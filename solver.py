@@ -1,208 +1,172 @@
-from dataclasses import dataclass
-
-from scipy.optimize import linprog
+﻿from scipy.optimize import linprog
 
 
-class LinearProgramError(ValueError):
+class ErroProgramaLinear(ValueError):
     pass
 
 
-@dataclass
-class ParsedProblem:
-    optimization_type: str
-    objective: list[float]
-    variable_names: list[str]
-    a_ub: list[list[float]]
-    b_ub: list[float]
-    a_eq: list[list[float]]
-    b_eq: list[float]
-    non_negative: list[bool]
-    original_constraints: list[dict]
+def resolver_programa_linear(dados):
+    # monta o problema e chama o solver
+    problema = montar_problema(dados)
 
+    objetivo = problema["objetivo"][:]
+    if problema["tipo"] == "maximizar":
+        objetivo = [-valor for valor in objetivo]
 
-def solve_linear_program(data: dict) -> dict:
-    # organiza os dados recebidos da tela
-    problem = _parse_problem(data)
-
-    # o scipy minimiza por padrao, entao a maximizacao troca o sinal
-    c = problem.objective[:]
-    if problem.optimization_type == "maximize":
-        c = [-value for value in c]
-
-    # executa o solver com as restricoes e a nao negatividade escolhida
-    result = linprog(
-        c=c,
-        A_ub=problem.a_ub or None,
-        b_ub=problem.b_ub or None,
-        A_eq=problem.a_eq or None,
-        b_eq=problem.b_eq or None,
-        bounds=[(0, None) if applied else (None, None) for applied in problem.non_negative],
+    resultado = linprog(
+        c=objetivo,
+        A_ub=problema["a_ub"] or None,
+        b_ub=problema["b_ub"] or None,
+        A_eq=problema["a_eq"] or None,
+        b_eq=problema["b_eq"] or None,
+        bounds=[(0, None) if regra else (None, None) for regra in problema["nao_negativas"]],
         method="highs",
     )
 
-    if not result.success:
+    if not resultado.success:
         return {
-            "status": result.status,
-            "message": _translate_solver_message(result.message),
-            "optimal_value": None,
-            "variables": [],
-            "slacks": [],
+            "mensagem": traduzir_mensagem(resultado.message),
+            "valor_otimo": None,
+            "variaveis": [],
+            "nao_negatividade": [],
+            "folgas": [],
         }
 
-    optimal_value = float(result.fun)
-    if problem.optimization_type == "maximize":
-        optimal_value *= -1
+    valor_otimo = float(resultado.fun)
+    if problema["tipo"] == "maximizar":
+        valor_otimo *= -1
 
-    variable_values = [
-        {
-            "name": name,
-            "value": _round_float(value),
-        }
-        for name, value in zip(problem.variable_names, result.x)
-    ]
+    variaveis = []
+    for nome, valor in zip(problema["nomes"], resultado.x):
+        variaveis.append({"nome": nome, "valor": arredondar(valor)})
 
-    slacks = _calculate_slacks(problem.original_constraints, result.x)
-    non_negative_rules = [
-        {"name": name, "applied": applied}
-        for name, applied in zip(problem.variable_names, problem.non_negative)
-    ]
+    nao_negatividade = []
+    for nome, regra in zip(problema["nomes"], problema["nao_negativas"]):
+        nao_negatividade.append({"nome": nome, "aplicada": regra})
 
     return {
-        "status": result.status,
-            "message": "Solução ótima encontrada.",
-        "optimal_value": _round_float(optimal_value),
-        "variables": variable_values,
-        "non_negative": non_negative_rules,
-        "slacks": slacks,
+        "mensagem": "Solução ótima encontrada.",
+        "valor_otimo": arredondar(valor_otimo),
+        "variaveis": variaveis,
+        "nao_negatividade": nao_negatividade,
+        "folgas": calcular_folgas(problema["restricoes_originais"], resultado.x),
     }
 
 
-def _parse_problem(data: dict) -> ParsedProblem:
-    # transforma o json do formulario em matrizes para o solver
-    optimization_type = data.get("optimizationType")
-    if optimization_type not in {"maximize", "minimize"}:
-        raise LinearProgramError("Escolha se deseja maximizar ou minimizar.")
+def montar_problema(dados):
+    # transforma os dados da tela em listas para o scipy
+    tipo = dados.get("tipo")
+    if tipo not in {"maximizar", "minimizar"}:
+        raise ErroProgramaLinear("Escolha se deseja maximizar ou minimizar.")
 
-    variable_count = int(data.get("variableCount", 0))
-    if variable_count <= 0:
-        raise LinearProgramError("Informe pelo menos uma variável.")
+    quantidade = int(dados.get("quantidade", 0))
+    if quantidade <= 0:
+        raise ErroProgramaLinear("Informe pelo menos uma variável.")
 
-    variable_names = [
-        _clean_variable_name(name, index)
-        for index, name in enumerate(data.get("variableNames", []))
-    ]
-    if len(variable_names) != variable_count:
-        variable_names = [f"x{index + 1}" for index in range(variable_count)]
+    nomes = dados.get("nomes", [])
+    if len(nomes) != quantidade:
+        nomes = [f"x{indice + 1}" for indice in range(quantidade)]
 
-    objective = _parse_coefficients(data.get("objective", []), variable_count, "função objetivo")
-    non_negative = _parse_non_negative(data.get("nonNegative", []), variable_count)
+    nomes = [limpar_nome(nome, indice) for indice, nome in enumerate(nomes)]
+    objetivo = ler_coeficientes(dados.get("objetivo", []), quantidade, "função objetivo")
+    nao_negativas = dados.get("nao_negativas", [True for _ in range(quantidade)])
 
     a_ub = []
     b_ub = []
     a_eq = []
     b_eq = []
-    original_constraints = []
+    restricoes_originais = []
 
-    for index, constraint in enumerate(data.get("constraints", []), start=1):
-        coefficients = _parse_coefficients(
-            constraint.get("coefficients", []),
-            variable_count,
-            f"restrição {index}",
-        )
-        operator = constraint.get("operator")
-        rhs = _parse_number(constraint.get("rhs"), f"lado direito da restrição {index}")
+    for indice, restricao in enumerate(dados.get("restricoes", []), start=1):
+        coeficientes = ler_coeficientes(restricao.get("coeficientes", []), quantidade, f"restrição {indice}")
+        operador = restricao.get("operador")
+        lado_direito = ler_numero(restricao.get("lado_direito"), f"lado direito da restrição {indice}")
 
-        original_constraints.append({
-            "coefficients": coefficients,
-            "operator": operator,
-            "rhs": rhs,
+        restricoes_originais.append({
+            "coeficientes": coeficientes,
+            "operador": operador,
+            "lado_direito": lado_direito,
         })
 
-        if operator == "<=":
-            a_ub.append(coefficients)
-            b_ub.append(rhs)
-        elif operator == ">=":
-            a_ub.append([-value for value in coefficients])
-            b_ub.append(-rhs)
-        elif operator == "=":
-            a_eq.append(coefficients)
-            b_eq.append(rhs)
+        if operador == "<=":
+            a_ub.append(coeficientes)
+            b_ub.append(lado_direito)
+        elif operador == ">=":
+            a_ub.append([-valor for valor in coeficientes])
+            b_ub.append(-lado_direito)
+        elif operador == "=":
+            a_eq.append(coeficientes)
+            b_eq.append(lado_direito)
         else:
-            raise LinearProgramError(f"Operador inválido na restrição {index}.")
+            raise ErroProgramaLinear(f"Operador inválido na restrição {indice}.")
 
-    return ParsedProblem(
-        optimization_type=optimization_type,
-        objective=objective,
-        variable_names=variable_names,
-        a_ub=a_ub,
-        b_ub=b_ub,
-        a_eq=a_eq,
-        b_eq=b_eq,
-        non_negative=non_negative,
-        original_constraints=original_constraints,
-    )
-
-
-def _parse_coefficients(values: list, expected_count: int, field_name: str) -> list[float]:
-    if len(values) != expected_count:
-        raise LinearProgramError(f"A {field_name} deve ter {expected_count} coeficientes.")
-    return [_parse_number(value, field_name) for value in values]
+    return {
+        "tipo": tipo,
+        "objetivo": objetivo,
+        "nomes": nomes,
+        "nao_negativas": [bool(valor) for valor in nao_negativas],
+        "a_ub": a_ub,
+        "b_ub": b_ub,
+        "a_eq": a_eq,
+        "b_eq": b_eq,
+        "restricoes_originais": restricoes_originais,
+    }
 
 
-def _parse_number(value, field_name: str) -> float:
+def ler_coeficientes(valores, quantidade, campo):
+    if len(valores) != quantidade:
+        raise ErroProgramaLinear(f"A {campo} deve ter {quantidade} coeficientes.")
+    return [ler_numero(valor, campo) for valor in valores]
+
+
+def ler_numero(valor, campo):
     try:
-        return float(value)
+        return float(valor)
     except (TypeError, ValueError):
-        raise LinearProgramError(f"Valor inválido em {field_name}.")
+        raise ErroProgramaLinear(f"Valor inválido em {campo}.")
 
 
-def _parse_non_negative(values: list, expected_count: int) -> list[bool]:
-    if len(values) != expected_count:
-        return [True for _ in range(expected_count)]
-    return [bool(value) for value in values]
+def limpar_nome(nome, indice):
+    nome = str(nome or "").strip()
+    return nome if nome else f"x{indice + 1}"
 
 
-def _clean_variable_name(name: str, index: int) -> str:
-    name = str(name or "").strip()
-    return name if name else f"x{index + 1}"
+def calcular_folgas(restricoes, valores_variaveis):
+    # calcula a folga de cada restricao
+    folgas = []
 
+    for indice, restricao in enumerate(restricoes, start=1):
+        lado_esquerdo = 0
+        for coeficiente, valor in zip(restricao["coeficientes"], valores_variaveis):
+            lado_esquerdo += coeficiente * valor
 
-def _calculate_slacks(constraints: list[dict], variable_values) -> list[dict]:
-    # calcula a folga para indicar quais restricoes estao ativas
-    slacks = []
+        lado_direito = restricao["lado_direito"]
+        operador = restricao["operador"]
 
-    for index, constraint in enumerate(constraints, start=1):
-        lhs = sum(coef * value for coef, value in zip(constraint["coefficients"], variable_values))
-        rhs = constraint["rhs"]
-        operator = constraint["operator"]
-
-        if operator == "<=":
-            slack = rhs - lhs
-        elif operator == ">=":
-            slack = lhs - rhs
+        if operador == "<=":
+            folga = lado_direito - lado_esquerdo
+        elif operador == ">=":
+            folga = lado_esquerdo - lado_direito
         else:
-            slack = abs(lhs - rhs)
+            folga = abs(lado_esquerdo - lado_direito)
 
-        slacks.append({
-            "constraint": index,
-            "lhs": _round_float(lhs),
-            "operator": operator,
-            "rhs": _round_float(rhs),
-            "slack": _round_float(slack),
-            "active": bool(abs(float(slack)) <= 1e-7),
+        folgas.append({
+            "numero": indice,
+            "folga": arredondar(folga),
+            "ativa": bool(abs(float(folga)) <= 1e-7),
         })
 
-    return slacks
+    return folgas
 
 
-def _translate_solver_message(message: str) -> str:
-    if "infeasible" in message.lower():
+def traduzir_mensagem(mensagem):
+    if "infeasible" in mensagem.lower():
         return "O problema não possui solução viável com as restrições informadas."
-    if "unbounded" in message.lower():
+    if "unbounded" in mensagem.lower():
         return "O problema é ilimitado. A função objetivo pode crescer ou diminuir sem limite."
-    return message
+    return mensagem
 
 
-def _round_float(value: float) -> float:
-    rounded = round(float(value), 6)
-    return 0.0 if abs(rounded) < 1e-9 else rounded
+def arredondar(valor):
+    valor = round(float(valor), 6)
+    return 0.0 if abs(valor) < 1e-9 else valor

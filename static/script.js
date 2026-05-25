@@ -1,401 +1,227 @@
-const variableCountInput = document.querySelector("#variable-count");
-const buildModelButton = document.querySelector("#build-model");
-const addConstraintButton = document.querySelector("#add-constraint");
-const form = document.querySelector("#solver-form");
+﻿const quantidadeVariaveis = document.querySelector("#quantidade-variaveis");
+const botaoMontar = document.querySelector("#montar-modelo");
+const botaoAdicionar = document.querySelector("#adicionar-restricao");
+const formulario = document.querySelector("#formulario");
 
-const variablesContainer = document.querySelector("#variables");
-const nonNegativityContainer = document.querySelector("#non-negativity");
-const objectiveContainer = document.querySelector("#objective");
-const constraintsContainer = document.querySelector("#constraints");
-const resultsSection = document.querySelector("#results");
-const solutionContainer = document.querySelector("#solution");
-const reportContainer = document.querySelector("#report");
+const areaVariaveis = document.querySelector("#variaveis");
+const areaNaoNegatividade = document.querySelector("#nao-negatividade");
+const areaObjetivo = document.querySelector("#objetivo");
+const areaRestricoes = document.querySelector("#restricoes");
+const areaResultado = document.querySelector("#resultado");
+const areaRelatorio = document.querySelector("#relatorio");
 
-buildModelButton.addEventListener("click", buildModelFields);
-addConstraintButton.addEventListener("click", () => addConstraintRow());
-form.addEventListener("submit", solveModel);
-document.addEventListener("click", closeCustomSelects);
+botaoMontar.addEventListener("click", montarCampos);
+botaoAdicionar.addEventListener("click", adicionarRestricao);
+formulario.addEventListener("submit", resolverModelo);
 
-buildModelFields();
-prepareCustomSelects();
+montarCampos();
 
-function buildModelFields() {
-  // remonta os campos quando a quantidade de variaveis muda
-  const variableCount = getVariableCount();
+function montarCampos() {
+  // cria os campos principais
+  const quantidade = pegarQuantidade();
 
-  variablesContainer.innerHTML = "";
-  nonNegativityContainer.innerHTML = "";
-  objectiveContainer.innerHTML = "";
-  constraintsContainer.innerHTML = "";
+  areaVariaveis.innerHTML = "";
+  areaNaoNegatividade.innerHTML = "";
+  areaObjetivo.innerHTML = "";
+  areaRestricoes.innerHTML = "";
 
-  for (let index = 0; index < variableCount; index += 1) {
-    const variableName = `x${index + 1}`;
-
-    variablesContainer.appendChild(createVariableNameField(index, variableName));
-    nonNegativityContainer.appendChild(createNonNegativeOption(index, variableName));
-    objectiveContainer.appendChild(createCoefficientField("objective", index, variableName));
+  for (let indice = 0; indice < quantidade; indice++) {
+    const nome = `x${indice + 1}`;
+    areaVariaveis.appendChild(criarCampoNome(indice, nome));
+    areaNaoNegatividade.appendChild(criarCampoNaoNegatividade(nome));
+    areaObjetivo.appendChild(criarCampoNumero("objetivo", nome));
   }
 
-  addConstraintRow();
-  prepareInputs();
+  adicionarRestricao();
+  prepararInputs();
 }
 
-function createVariableNameField(index, defaultName) {
-  const wrapper = document.createElement("div");
-  wrapper.className = "field-item";
+function criarCampoNome(indice, nome) {
+  const rotulo = document.createElement("label");
+  rotulo.textContent = `Nome da variável ${indice + 1}`;
 
-  const label = document.createElement("label");
-  label.setAttribute("for", `variable-name-${index}`);
-  label.textContent = `Nome da variável ${index + 1}`;
+  const campo = document.createElement("input");
+  campo.className = "nome-variavel";
+  campo.value = nome;
 
-  const input = document.createElement("input");
-  input.id = `variable-name-${index}`;
-  input.className = "variable-name";
-  input.value = defaultName;
-
-  wrapper.append(label, input);
-  return wrapper;
+  rotulo.appendChild(campo);
+  return rotulo;
 }
 
-function createNonNegativeOption(index, variableName) {
-  const label = document.createElement("label");
-  label.className = "check-card";
+function criarCampoNaoNegatividade(nome) {
+  const rotulo = document.createElement("label");
+  rotulo.className = "check";
 
-  const input = document.createElement("input");
-  input.type = "checkbox";
-  input.className = "non-negative-option";
-  input.dataset.index = index;
-  input.checked = true;
+  const campo = document.createElement("input");
+  campo.type = "checkbox";
+  campo.className = "nao-negativa";
+  campo.checked = true;
 
-  const control = document.createElement("span");
-  control.className = "check-control";
+  const texto = document.createElement("span");
+  texto.textContent = `${nome} >= 0`;
 
-  const text = document.createElement("span");
-  text.className = "check-text";
-  text.textContent = `${variableName} >= 0`;
-
-  label.append(input, control, text);
-  return label;
+  rotulo.append(campo, texto);
+  return rotulo;
 }
 
-function createCoefficientField(group, index, variableName) {
-  const wrapper = document.createElement("label");
-  wrapper.className = "coefficient-field";
-  wrapper.textContent = `${variableName}: `;
+function criarCampoNumero(classe, nome) {
+  const rotulo = document.createElement("label");
+  rotulo.textContent = nome;
 
-  const input = document.createElement("input");
-  input.type = "number";
-  input.step = "any";
-  input.placeholder = "0";
-  input.className = `${group}-coefficient`;
-  input.dataset.index = index;
+  const campo = document.createElement("input");
+  campo.type = "number";
+  campo.step = "any";
+  campo.placeholder = "0";
+  campo.className = `${classe}-coeficiente`;
 
-  wrapper.appendChild(input);
-  return wrapper;
+  rotulo.appendChild(campo);
+  return rotulo;
 }
 
-function addConstraintRow() {
-  // cria uma nova linha de restricao
-  const variableCount = getVariableCount();
-  const row = document.createElement("fieldset");
-  row.className = "constraint-row";
+function adicionarRestricao() {
+  // cria uma nova restricao
+  const bloco = document.createElement("fieldset");
+  bloco.className = "restricao";
 
-  const legend = document.createElement("legend");
-  legend.textContent = `Restrição ${constraintsContainer.children.length + 1}`;
-  row.appendChild(legend);
+  const legenda = document.createElement("legend");
+  legenda.textContent = `Restrição ${areaRestricoes.children.length + 1}`;
+  bloco.appendChild(legenda);
 
-  for (let index = 0; index < variableCount; index += 1) {
-    const variableName = getVariableNames()[index] || `x${index + 1}`;
-    const field = createCoefficientField("constraint", index, variableName);
-    row.appendChild(field);
-  }
-
-  const operator = createCustomSelect("constraint-operator", [
-    { value: "<=", label: "<=" },
-    { value: ">=", label: ">=" },
-    { value: "=", label: "=" },
-  ]);
-
-  const rhs = document.createElement("input");
-  rhs.type = "number";
-  rhs.step = "any";
-  rhs.placeholder = "lado direito";
-  rhs.className = "constraint-rhs";
-
-  const removeButton = document.createElement("button");
-  removeButton.type = "button";
-  removeButton.textContent = "Remover";
-  removeButton.addEventListener("click", () => row.remove());
-
-  row.append(operator, rhs, removeButton);
-  constraintsContainer.appendChild(row);
-  prepareInputs();
-  prepareCustomSelects();
-}
-
-function createCustomSelect(className, options) {
-  // cria um dropdown estilizado sem depender do select nativo
-  const wrapper = document.createElement("div");
-  wrapper.className = `custom-select ${className}`;
-  wrapper.dataset.value = options[0].value;
-
-  const trigger = document.createElement("button");
-  trigger.type = "button";
-  trigger.className = "custom-select-trigger";
-  trigger.setAttribute("aria-expanded", "false");
-  trigger.innerHTML = `<span>${options[0].label}</span>`;
-
-  const menu = document.createElement("div");
-  menu.className = "custom-select-menu";
-  menu.setAttribute("role", "listbox");
-
-  options.forEach((option) => {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.dataset.value = option.value;
-    item.textContent = option.label;
-    menu.appendChild(item);
+  pegarNomes().forEach((nome) => {
+    bloco.appendChild(criarCampoNumero("restricao", nome));
   });
 
-  wrapper.append(trigger, menu);
-  return wrapper;
+  const operador = document.createElement("select");
+  operador.className = "operador";
+
+  ["<=", ">=", "="].forEach((sinal) => {
+    const opcao = document.createElement("option");
+    opcao.value = sinal;
+    opcao.textContent = sinal;
+    operador.appendChild(opcao);
+  });
+
+  const ladoDireito = document.createElement("input");
+  ladoDireito.type = "number";
+  ladoDireito.step = "any";
+  ladoDireito.placeholder = "lado direito";
+  ladoDireito.className = "lado-direito";
+
+  const remover = document.createElement("button");
+  remover.type = "button";
+  remover.textContent = "Remover";
+  remover.addEventListener("click", () => bloco.remove());
+
+  bloco.append(operador, ladoDireito, remover);
+  areaRestricoes.appendChild(bloco);
+  prepararInputs();
 }
 
-async function solveModel(event) {
-  // envia o modelo para o flask resolver
-  event.preventDefault();
-  clearResults();
+async function resolverModelo(evento) {
+  // envia os dados para o python
+  evento.preventDefault();
+  areaResultado.hidden = true;
 
-  const payload = collectModelData();
+  const resposta = await fetch("/solve", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(montarDados()),
+  });
 
-  try {
-    const response = await fetch("/solve", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
+  const dados = await resposta.json();
 
-    const data = await response.json();
-
-    if (!response.ok || !data.success) {
-      showError(data.error || "Não foi possível resolver o modelo.");
-      return;
-    }
-
-    showResults(data.solution, data.report);
-  } catch (error) {
-    showError("Erro ao conectar com o servidor.");
+  if (!resposta.ok || !dados.sucesso) {
+    mostrarErro(dados.erro || "Não foi possível resolver o modelo.");
+    return;
   }
+
+  mostrarResultado(dados.solucao, dados.relatorio);
 }
 
-function collectModelData() {
-  // junta todos os inputs em um objeto para a api
+function montarDados() {
+  // junta os dados em portugues para enviar ao servidor
   return {
-    optimizationType: document.querySelector("#optimization-type").dataset.value,
-    variableCount: getVariableCount(),
-    variableNames: getVariableNames(),
-    nonNegative: collectNonNegativeOptions(),
-    objective: collectValues(".objective-coefficient"),
-    constraints: collectConstraints(),
+    tipo: document.querySelector("#tipo-otimizacao").value,
+    quantidade: pegarQuantidade(),
+    nomes: pegarNomes(),
+    nao_negativas: pegarNaoNegatividade(),
+    objetivo: pegarValores(".objetivo-coeficiente"),
+    restricoes: pegarRestricoes(),
   };
 }
 
-function collectNonNegativeOptions() {
-  return [...document.querySelectorAll(".non-negative-option")].map((input) => input.checked);
+function pegarRestricoes() {
+  const restricoes = [];
+
+  document.querySelectorAll(".restricao").forEach((bloco) => {
+    restricoes.push({
+      coeficientes: pegarValoresDentro(bloco, ".restricao-coeficiente"),
+      operador: bloco.querySelector(".operador").value,
+      lado_direito: bloco.querySelector(".lado-direito").value,
+    });
+  });
+
+  return restricoes;
 }
 
-function collectConstraints() {
-  return [...document.querySelectorAll(".constraint-row")].map((row) => ({
-    coefficients: [...row.querySelectorAll(".constraint-coefficient")].map((input) => input.value || "0"),
-    operator: row.querySelector(".constraint-operator").dataset.value,
-    rhs: row.querySelector(".constraint-rhs").value,
-  }));
+function pegarValores(seletor) {
+  return [...document.querySelectorAll(seletor)].map((campo) => campo.value || "0");
 }
 
-function collectValues(selector) {
-  return [...document.querySelectorAll(selector)].map((input) => input.value || "0");
+function pegarValoresDentro(bloco, seletor) {
+  return [...bloco.querySelectorAll(seletor)].map((campo) => campo.value || "0");
 }
 
-function getVariableNames() {
-  return [...document.querySelectorAll(".variable-name")].map((input, index) => (
-    input.value.trim() || `x${index + 1}`
-  ));
+function pegarNomes() {
+  return [...document.querySelectorAll(".nome-variavel")].map((campo, indice) => {
+    return campo.value.trim() || `x${indice + 1}`;
+  });
 }
 
-function getVariableCount() {
-  return Math.max(1, Number.parseInt(variableCountInput.value, 10) || 1);
+function pegarNaoNegatividade() {
+  return [...document.querySelectorAll(".nao-negativa")].map((campo) => campo.checked);
 }
 
-function showResults(solution, report) {
-  // mostra a solucao numerica e os blocos de resultado
-  resultsSection.hidden = false;
+function pegarQuantidade() {
+  return Math.max(1, parseInt(quantidadeVariaveis.value) || 1);
+}
 
-  if (solution.optimal_value === null) {
-    solutionContainer.innerHTML = `
-      <article class="result-hero result-error">
-        <span>Status</span>
-        <strong>Não resolvido</strong>
-        <p>${solution.message}</p>
-      </article>
-    `;
-  } else {
-    const variables = solution.variables
-      .map((variable) => `
-        <article class="metric-card">
-          <span>${variable.name}</span>
-          <strong>${variable.value}</strong>
-        </article>
-      `)
-      .join("");
+function mostrarResultado(solucao, relatorio) {
+  // mostra apenas o relatorio final
+  areaResultado.hidden = false;
 
-    const activeRestrictions = solution.slacks.filter((slack) => slack.active).length;
-    const restrictionCards = solution.slacks
-      .map((slack) => `
-        <article class="restriction-card ${slack.active ? "is-active" : ""}">
-          <div>
-            <span>Restrição ${slack.constraint}</span>
-            <strong>${slack.active ? "Ativa" : "Com folga"}</strong>
-          </div>
-          <dl>
-            <div>
-              <dt>Lado esquerdo</dt>
-              <dd>${slack.lhs}</dd>
-            </div>
-            <div>
-              <dt>Lado direito</dt>
-              <dd>${slack.rhs}</dd>
-            </div>
-            <div>
-              <dt>Folga</dt>
-              <dd>${slack.slack}</dd>
-            </div>
-          </dl>
-        </article>
-      `)
-      .join("");
-
-    solutionContainer.innerHTML = `
-      <div class="result-grid">
-        <article class="result-hero">
-          <span>${solution.message}</span>
-          <strong>${solution.optimal_value}</strong>
-          <p>Esse é o melhor valor possível para a função objetivo com as restrições informadas.</p>
-        </article>
-
-        <article class="result-note">
-          <span>Restrições ativas</span>
-          <strong>${activeRestrictions}</strong>
-          <p>São restrições sem folga, ou seja, limites que a solução ótima está usando por completo.</p>
-        </article>
-      </div>
-
-      <div class="result-block">
-        <h3>Valores das variáveis</h3>
-        <div class="metric-grid">${variables}</div>
-      </div>
-
-      <div class="result-block">
-        <h3>Restrições</h3>
-        <div class="restriction-grid">${restrictionCards}</div>
-      </div>
-    `;
+  if (solucao.valor_otimo === null) {
+    mostrarErro(solucao.mensagem);
+    return;
   }
 
-  renderReport(report);
-}
+  const objetivo = document.querySelector("#tipo-otimizacao").value === "maximizar" ? "Maximizar" : "Minimizar";
+  const variaveis = relatorio.variaveis.map((item) => `${item.nome} = ${item.valor}`).join(", ") + ".";
+  const ativas = (relatorio.restricoes
+    .filter((item) => item.ativa)
+    .map((item) => item.nome)
+    .join(", ") || "nenhuma") + ".";
 
-function renderReport(report) {
-  // resume as informacoes mais importantes do resultado
-  const variables = (report.variables || [])
-    .map((variable) => `${variable.name} = ${variable.value}`)
-    .join(", ");
-  const activeRestrictions = (report.restrictions || [])
-    .filter((restriction) => restriction.state === "ativa")
-      .map((restriction) => restriction.name)
-      .join(", ");
-
-  reportContainer.innerHTML = `
-    <article class="report-card">
-      <h3>Relatório</h3>
-      <p>${report.summary || ""} ${report.model || ""}</p>
-      <p><strong>Valores ótimos:</strong> ${variables || "Nenhum valor disponível."}</p>
-      <p><strong>Não negatividade:</strong> ${report.non_negativity || ""}</p>
-      <p><strong>Restrições ativas:</strong> ${activeRestrictions || "nenhuma."}</p>
-    </article>
+  areaRelatorio.innerHTML = `
+    <p><strong>Valor ótimo:</strong> ${solucao.valor_otimo}.</p>
+    <p><strong>Objetivo:</strong> ${objetivo}.</p>
+    <p><strong>Valores ótimos:</strong> ${variaveis}</p>
+    <p><strong>Não negatividade:</strong> ${relatorio.nao_negatividade}</p>
+    <p><strong>Restrições ativas:</strong> ${ativas}</p>
   `;
 }
 
-function showError(message) {
-  resultsSection.hidden = false;
-  solutionContainer.innerHTML = `
-    <article class="result-hero result-error">
-      <span>Status</span>
-      <strong>Erro</strong>
-      <p>${message}</p>
-    </article>
-  `;
-  reportContainer.innerHTML = "";
+function mostrarErro(mensagem) {
+  areaResultado.hidden = false;
+  areaRelatorio.innerHTML = `<p class="erro">${mensagem}</p>`;
 }
 
-function clearResults() {
-  resultsSection.hidden = true;
-  solutionContainer.innerHTML = "";
-  reportContainer.innerHTML = "";
-}
-
-function prepareInputs() {
-  document.querySelectorAll("input").forEach((input) => {
-    if (input.type === "checkbox") {
-      return;
-    }
-
-    if (input.dataset.readyToSelect === "true") {
-      return;
-    }
-
-    input.addEventListener("focus", () => input.select());
-    input.addEventListener("click", () => input.select());
-    input.dataset.readyToSelect = "true";
+function prepararInputs() {
+  document.querySelectorAll("input[type='number']").forEach((campo) => {
+    campo.addEventListener("focus", () => campo.select());
   });
 }
 
-function prepareCustomSelects() {
-  // ativa abertura, escolha e fechamento dos dropdowns customizados
-  document.querySelectorAll(".custom-select").forEach((select) => {
-    if (select.dataset.ready === "true") {
-      return;
-    }
 
-    const trigger = select.querySelector(".custom-select-trigger");
-    const label = trigger.querySelector("span");
-    const options = select.querySelectorAll(".custom-select-menu button");
 
-    trigger.addEventListener("click", (event) => {
-      event.stopPropagation();
-      const isOpen = select.classList.contains("is-open");
-      closeCustomSelects();
-      select.classList.toggle("is-open", !isOpen);
-      trigger.setAttribute("aria-expanded", String(!isOpen));
-    });
 
-    options.forEach((option) => {
-      option.addEventListener("click", (event) => {
-        event.stopPropagation();
-        select.dataset.value = option.dataset.value;
-        label.textContent = option.textContent;
-        closeCustomSelects();
-      });
-    });
-
-    select.dataset.ready = "true";
-  });
-}
-
-function closeCustomSelects() {
-  document.querySelectorAll(".custom-select.is-open").forEach((select) => {
-    select.classList.remove("is-open");
-    select.querySelector(".custom-select-trigger").setAttribute("aria-expanded", "false");
-  });
-}
